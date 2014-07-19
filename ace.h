@@ -42,8 +42,8 @@ namespace ace
 typedef wchar_t achar;
 typedef std::wstring astring;
 #else 
-typedef uint16_t achar;
-typedef std::basic_string<uint16_t> astring;
+typedef char16_t achar;
+typedef std::basic_string<char16_t> astring;
 #endif
 };
 
@@ -154,7 +154,6 @@ inline void SinCos(float x, float& s, float& c)
 	c = 1.0f - x2 / 2.0f + x4 / 24.0f - x6 / 720.0f + x8 / 40320.0f - x10 / 3628800.0f;
 }
 
-
 //----------------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------------
@@ -166,49 +165,7 @@ inline void SinCos(float x, float& s, float& c)
 @param	src			[in]	入力配列の先頭ポインタ
 @return	文字数
 */
-static int32_t Utf16ToUtf8(int8_t* dst, int32_t dst_size, const int16_t* src)
-{
-	int32_t cnt = 0;
-	const int16_t* wp = src;
-	int8_t* cp = dst;
-
-	if (dst_size == 0) return 0;
-
-	dst_size -= 3;
-
-	for (cnt = 0; cnt < dst_size;)
-	{
-		int16_t wc = *wp++;
-		if (wc == 0)
-		{
-			break;
-		}
-		if ((wc & ~0x7f) == 0)
-		{
-			*cp++ = wc & 0x7f;
-			cnt += 1;
-		}
-		else if ((wc & ~0x7ff) == 0)
-		{
-			*cp++ = ((wc >> 6) & 0x1f) | 0xc0;
-			*cp++ = ((wc) & 0x3f) | 0x80;
-			cnt += 2;
-		}
-		else
-		{
-			*cp++ = ((wc >> 12) & 0xf) | 0xe0;
-			*cp++ = ((wc >> 6) & 0x3f) | 0x80;
-			*cp++ = ((wc) & 0x3f) | 0x80;
-			cnt += 3;
-		}
-	}
-	*cp = '\0';
-	return cnt;
-}
-
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
+int32_t Utf16ToUtf8(int8_t* dst, int32_t dst_size, const int16_t* src);
 
 /**
 	@brief	文字コードを変換する。(UTF8 -> UTF16)
@@ -217,287 +174,19 @@ static int32_t Utf16ToUtf8(int8_t* dst, int32_t dst_size, const int16_t* src)
 	@param	src			[in]	入力配列の先頭ポインタ
 	@return	文字数
 */
-static int32_t Utf8ToUtf16(int16_t* dst, int32_t dst_size, const int8_t* src)
-{
-	int32_t i, code;
-	int8_t c0, c1, c2;
+int32_t Utf8ToUtf16(int16_t* dst, int32_t dst_size, const int8_t* src);
 
-	if (dst_size == 0) return 0;
+std::wstring ToWide(const char* pText);
 
-	dst_size -= 1;
+astring ToAString(const wchar_t* src);
 
-	for (i = 0; i < dst_size; i++)
-	{
-		int16_t wc;
+astring ToAString(const char* src);
 
-		c0 = *src++;
-		if (c0 == '\0')
-		{
-			break;
-		}
-		// UTF8からUTF16に変換
-		code = (uint8_t)c0 >> 4;
-		if (code <= 7)
-		{
-			// 8bit文字
-			wc = c0;
-		}
-		else if (code >= 12 && code <= 13)
-		{
-			// 16bit文字
-			c1 = *src++;
-			wc = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
-		}
-		else if (code == 14)
-		{
-			// 24bit文字
-			c1 = *src++;
-			c2 = *src++;
-			wc = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
-		}
-		else
-		{
-			continue;
-		}
-		dst[i] = wc;
-	}
-	dst[i] = 0;
-	return i;
-}
+std::string ToUtf8String(const achar* src);
 
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
+astring ReplaceAll(const astring text, const achar* from, const achar* to);
 
-static std::wstring ToWide(const char* pText)
-{
-#if _WIN32
-	int Len = ::MultiByteToWideChar(CP_ACP, 0, pText, -1, NULL, 0);
-
-	wchar_t* pOut = new wchar_t[Len + 1];
-	::MultiByteToWideChar(CP_ACP, 0, pText, -1, pOut, Len);
-	std::wstring Out(pOut);
-	delete [] pOut;
-	return Out;
-#else
-	int16_t result[4096];
-	std::wstring temp;
-
-	Utf8ToUtf16(result, 4096, (int8_t*)pText);
-
-	if (sizeof(wchar_t)==2)
-	{
-		temp = std::wstring((const wchar_t*)result);
-	}
-	else if (sizeof(wchar_t)==4)
-	{
-		wchar_t buf[4096];
-		for (int i = 0; i < 4096; i++)
-		{
-			buf[i] = (int32_t)result[i];
-			if (result[i] == 0)
-			{
-				break;
-			}
-		}
-		temp = std::wstring(buf);
-	}
-
-	return temp;
-#endif
-}
-
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
-
-static astring ToAString(const wchar_t* src)
-{
-	if (sizeof(wchar_t)== 2)
-	{
-#ifdef _WIN32
-		return astring(src);
-#else
-		return astring((uint16_t*)src);
-#endif
-	}
-	if (sizeof(wchar_t)== 4)
-	{
-#ifndef _WIN32
-		uint16_t temp[2048];
-		int32_t length = 0;
-		while (src[length] != 0 && length < 2047)
-		{
-			temp[length] = (uint16_t)src[length];
-			length++;
-		}
-		temp[length] = 0;
-		return astring(temp);
-#endif
-	}
-	return astring();
-}
-
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
-
-static astring ToAString(const char* src)
-{
-	return ToAString(ToWide(src).c_str());
-}
-
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
-
-static std::string ToUtf8String(const achar* src)
-{
-	int8_t result[4096];
-	std::string temp;
-
-	Utf16ToUtf8(result, 4096, (int16_t*)src);
-	temp = std::string((const char*)result);
-
-	return temp;
-}
-
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
-
-static astring ReplaceAll(const astring text, const achar* from, const achar* to)
-{
-	astring result = text;
-	astring endStr = astring(to);
-	astring::size_type pos = 0;
-	while (true)
-	{
-		pos = result.find(from, pos+1);
-		if (pos != astring::npos)
-		{
-			result = result.replace(pos, endStr.length(), endStr);
-		}
-		else
-		{
-			break;
-		}
-	}
-
-	return result;
-}
-
-static astring CombinePath( const achar* rootPath, const achar* path )
-{
-	const int32_t dstLength = 260;
-	achar dst[dstLength];
-
-	int rootPathLength = 0;
-	while( rootPath[ rootPathLength ] != 0 )
-	{
-		rootPathLength++;
-	}
-
-	int pathLength = 0;
-	while (path[pathLength] != 0)
-	{
-		pathLength++;
-	}
-
-	// 両方ともなし
-	if (rootPathLength == 0 && pathLength == 0)
-	{
-		return false;
-	}
-
-	// 片方なし
-	if (rootPathLength == 0)
-	{
-		if (pathLength < dstLength)
-		{
-			memcpy(dst, path, sizeof(achar) * (pathLength + 1));
-			return astring(dst);
-		}
-		else
-		{
-			return astring();
-		}
-	}
-
-	if (pathLength == 0)
-	{
-		if (rootPathLength < dstLength)
-		{
-			memcpy(dst, rootPath, sizeof(wchar_t) * (rootPathLength + 1));
-			return astring(dst);
-		}
-		else
-		{
-			return astring();
-		}
-	}
-
-	// 両方あり
-
-	// ディレクトリパスまで戻す。
-	int PathPosition = rootPathLength;
-	while (PathPosition > 0)
-	{
-		if (rootPath[PathPosition - 1] == L'/' || rootPath[PathPosition - 1] == L'\\')
-		{
-			break;
-		}
-		PathPosition--;
-	}
-
-	// コピーする
-	memcpy(dst, rootPath, sizeof(achar) * PathPosition);
-	dst[PathPosition] = 0;
-
-	// 無理やり繋げる
-	if (PathPosition + pathLength > dstLength)
-	{
-		return astring();
-	}
-
-	memcpy(&(dst[PathPosition]), path, sizeof(achar) * pathLength);
-	PathPosition = PathPosition + pathLength;
-	dst[PathPosition] = 0;
-
-	// ../ ..\ の処理
-	for (int i = 0; i < PathPosition - 2; i++)
-	{
-		if (dst[i] == L'.' && dst[i + 1] == L'.' && (dst[i + 2] == L'/' || dst[i + 2] == L'\\'))
-		{
-			int pos = 0;
-
-			if (i > 1 && dst[i - 2] == L'.')
-			{
-
-			}
-			else
-			{
-				for (pos = i - 2; pos > 0; pos--)
-				{
-					if (dst[pos - 1] == L'/' || dst[pos - 1] == L'\\')
-					{
-						break;
-					}
-				}
-
-				for (int k = pos; k < PathPosition; k++)
-				{
-					dst[k] = dst[k + (i + 3) - pos];
-				}
-				PathPosition = PathPosition - (i + 3 - pos);
-				i = pos - 1;
-			}
-		}
-	}
-	dst[PathPosition] = 0;
-	return astring(dst);
-}
-
+astring CombinePath(const achar* rootPath, const achar* path);
 
 #if !_WIN32 && !SWIG
 //----------------------------------------------------------------------------------
@@ -509,6 +198,32 @@ static astring ReplaceAll(const astring text, const wchar_t* from, const wchar_t
 }
 #endif
 
+//----------------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------------
+#if !SWIG
+void ShowMessageBox(const achar* title, const achar* text);
+
+#if _WIN32
+#define SPRINTF sprintf_s
+#else
+#define SPRINTF snprintf
+#endif
+
+#define ACE_ASSERT(condition, message) { \
+if (!(condition)) { \
+	char lbuf[100]; \
+	SPRINTF(lbuf, 100, "%d", __LINE__); \
+	auto m = ::ace::ToAString(message); \
+	auto f = ::ace::ToAString(__FILE__); \
+	auto l = ::ace::ToAString(lbuf); \
+	auto state = f + ::ace::ToAString("(") + l + ::ace::ToAString(")"); \
+	auto m_ = state + ::ace::ToAString("\n") + m; \
+	::ace::ShowMessageBox(::ace::ToAString("Assert").c_str(), m_.c_str()); \
+	(*((int*)0x0) = 0x0);  } \
+}
+
+#endif
 
 //----------------------------------------------------------------------------------
 //
@@ -606,6 +321,33 @@ static float RadianToDegree(float radian)
 	return radian / PI * 180.0f;
 }
 
+//----------------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------------
+static std::vector<int8_t> GetBinaryData(astring filePath)
+{
+	FILE* fp = nullptr;
+
+#if _WIN32
+	_wfopen_s(&fp, filePath.c_str(), L"rb");
+	if (fp == nullptr) return std::vector<int8_t>();
+#else
+	fp = fopen(ToUtf8String(filePath.c_str()).c_str(), "rb");
+	if (fp == nullptr) return std::vector<int8_t>();
+#endif
+
+	fseek(fp, 0, SEEK_END);
+	auto size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+
+	std::vector<int8_t> data;
+	data.resize(size);
+
+	fread(&(data[0]), 1, size, fp);
+	fclose(fp);
+
+	return data;
+}
 }
 
 
@@ -878,6 +620,16 @@ namespace ace
 		static float Dot(const Vector2DF& v1, const Vector2DF& v2)
 		{
 			return v1.X * v2.X + v1.Y * v2.Y;
+		}
+
+		/**
+		@brief	外積を取得する。
+		@param	v1	値1
+		@param	v2	値2
+		*/
+		static float Cross(const Vector2DF& v1, const Vector2DF& v2)
+		{
+			return v1.X * v2.Y - v1.Y * v2.X;
 		}
 
 		/**
@@ -1560,6 +1312,8 @@ namespace ace
 			@return	座標
 		*/
 		std::array<Vector2DI, 4> GetVertexes() const;
+
+		bool operator == (const RectI& other) const;
 	};
 }
 
@@ -1650,6 +1404,7 @@ namespace ace {
 #include<cxxabi.h>
 #include<cstdlib>
 #include<cassert>
+#include<typeinfo>
 #if !__has_include(<cxxabi.h>)
 #error "cxxabi.h is not found"
 #endif
@@ -1657,6 +1412,7 @@ namespace ace {
 #include<cxxabi.h>
 #include<cstdlib>
 #include<cassert>
+#include<typeinfo>
 #endif
 
 namespace ace
@@ -1791,7 +1547,15 @@ inline int64_t GetTime()
 	{
 		if (QueryPerformanceFrequency((LARGE_INTEGER*)&freq))
 		{
-			return count * 1000000 / freq;
+			// オーバーフロー対策
+			// return count * 1000000 / freq; と等価
+
+			int64_t ret = 0;
+			ret = count / freq;
+			count -= ret * freq;
+			ret *= 1000000;
+			ret += count * 1000000 / freq;
+			return ret;
 		}
 	}
 	return 0;
@@ -1826,8 +1590,6 @@ template<typename T, typename U> void TypeErasureCopy(T const* from, U* to)
 	memcpy(to, from, sizeof(T));
 }
 }
-
-
 //----------------------------------------------------------------------------------
 // Include
 //----------------------------------------------------------------------------------
@@ -2567,18 +2329,30 @@ namespace ace {
 
 	class Joystick;
 	class JoystickContainer;
+	
+	class File;
+	class Path;
+	class StaticFile;
+	class StreamFile;
 
 	class Sound;
 	class SoundSource;
 
+	class Texture;
 	class Texture2D;
 	class RenderTexture2D;
+	class CubemapTexture;
+
 	class Shader2D;
 	class Material2D;
 
 	class Effect;
 
 	class Model;
+
+	class Font;
+
+	class Chip2D;
 
 	class Mesh;
 	class Deformer;
@@ -2597,6 +2371,9 @@ namespace ace {
 	class CoreObject2D;
 	class CoreTextureObject2D;
 	class CoreCameraObject2D;
+	class CoreTextObject2D;
+	class CoreEffectObject2D;
+	class CoreMapObject2D;
 
 	class CoreLayer3D;
 	class CoreObject3D;
@@ -2610,57 +2387,66 @@ namespace ace {
 	//----------------------------------------------------------------------------------
 	//
 	//----------------------------------------------------------------------------------
+	enum class WritingDirection :int
+	{
+		Vertical,
+		Horizontal,
+	};
+
 	enum eTextureFormat
 	{
 		TEXTURE_FORMAT_R8G8B8A8_UNORM = 0,
 		TEXTURE_FORMAT_R32G32B32A32_FLOAT = 1,
+		TEXTURE_FORMAT_R8G8B8A8_UNORM_SRGB = 2,
+		TEXTURE_FORMAT_GL_R16G16_FLOAT = 3,
 	};
 
 	enum eTextureClassType
 	{
 		TEXTURE_CLASS_TEXTURE2D = 0,
-		TEXTURE_CLASS_RENDERTEXTURE = 1,
+		TEXTURE_CLASS_RENDERTEXTURE2D = 1,
+		TEXTURE_CLASS_CUBEMAPTEXTURE = 2,
+		TEXTURE_CLASS_DEPTHBUFFER = 3,
+
 	};
 
-	enum eAlphaBlend
+	/**
+		@brief	描画時のブレンドモードを表す列挙体
+	*/
+	enum class AlphaBlend : int32_t
 	{
 		/// <summary>
 		/// 不透明
 		/// </summary>
-		ALPHA_BLEND_OPACITY = 0,
+		Opacity = 0,
 		/// <summary>
 		/// 透明
 		/// </summary>
-		ALPHA_BLEND_BLEND = 1,
+		Blend = 1,
 		/// <summary>
 		/// 加算
 		/// </summary>
-		ALPHA_BLEND_ADD = 2,
+		Add = 2,
 		/// <summary>
 		/// 減算
 		/// </summary>
-		ALPHA_BLEND_SUB = 3,
+		Sub = 3,
 		/// <summary>
 		/// 乗算
 		/// </summary>
-		ALPHA_BLEND_MUL = 4,
-
-		ALPHA_BLEND_DWORD = 0x7fffffff,
+		Mul = 4,
 	};
 
-	enum eTextureFilterType
+	enum class TextureFilterType : int32_t
 	{
-		TEXTURE_FILTER_NEAREST = 0,
-		TEXTURE_FILTER_LINEAR = 1,
-		TEXTURE_FILTER_DWORD = 0x7fffffff,
+		Nearest = 0,
+		Linear = 1,
 	};
 
-	enum eTextureWrapType
+	enum class TextureWrapType : int32_t
 	{
-		TEXTURE_WRAP_REPEAT = 0,
-		TEXTURE_WRAP_CLAMP = 1,
-
-		TEXTURE_WRAP_DWORD = 0x7fffffff,
+		Repeat = 0,
+		Clamp = 1,
 	};
 
 	enum eCullingType
@@ -2672,10 +2458,24 @@ namespace ace {
 		CULLING_DWORD = 0x7fffffff,
 	};
 
-	enum eGraphicsType
+	/**
+		@brief	描画方法
+	*/
+	enum class GraphicsDeviceType : int32_t
 	{
-		GRAPHICS_TYPE_DX11,
-		GRAPHICS_TYPE_GL,
+		Default = 0,		///< 実行環境で最も安定している描画方法(初期化時に使用)
+		DirectX11 = 1,		///< DirectX11
+		OpenGL = 2,			///< OpenGL
+	};
+
+	enum class Object2DType : int32_t
+	{
+		Unknown,
+		Texture,
+		Camera,
+		Effect,
+		Text,
+		Map,
 	};
 
 	enum eRenderedObject3DType
@@ -2695,6 +2495,7 @@ namespace ace {
 		SHADER_VARIABLE_TYPE_FLOAT,
 		SHADER_VARIABLE_TYPE_VECTOR2DF,
 		SHADER_VARIABLE_TYPE_VECTOR3DF,
+		SHADER_VARIABLE_TYPE_VECTOR4DF,
 		SHADER_VARIABLE_TYPE_TEXTURE2D,
 	};
 
@@ -2721,6 +2522,39 @@ namespace ace {
 	};
 
 	/**
+	@brief	3D描画時に表示されるバッファ
+	*/
+	enum eVisalizedBuffer
+	{
+		VISALIZED_BUFFER_FINALIMAGE,
+		VISALIZED_BUFFER_DIFFUSE,
+		VISALIZED_BUFFER_NORMAL,
+	};
+
+	/**
+		@brief	描画設定のクラス
+	*/
+	class RenderSettings
+	{
+	public:
+		/**
+			@brief	遅延レンダリングから軽量レンダリングに変更し高速に描画するか?
+		*/
+		bool IsLightweightMode;
+		
+		/**
+			@brief	画面に表示されるバッファ
+		*/
+		eVisalizedBuffer VisalizedBuffer;
+
+		RenderSettings()
+		{
+			IsLightweightMode = false;
+			VisalizedBuffer = VISALIZED_BUFFER_FINALIMAGE;
+		}
+	};
+
+	/**
 	@brief	参照カウンタのインターフェース
 	*/
 	class IReference
@@ -2744,7 +2578,6 @@ namespace ace {
 		*/
 		virtual int Release() = 0;
 	};
-
 
 	//----------------------------------------------------------------------------------
 	//
@@ -2849,15 +2682,15 @@ namespace ace {
 
 namespace ace{
 
-	enum eMouseButtonState
+	enum class MouseButtonState:int
 	{
-		MOUSE_PUSH,MOUSE_PULL,MOUSE_HOLD,MOUSE_FREE
+		Push,Pull,Hold,Free
 	};
 
 	class IMouseButtonState
 	{
 	public:
-		virtual eMouseButtonState GetButtonState() const = 0;
+		virtual const MouseButtonState GetButtonState() const = 0;
 	};
 };
 
@@ -2869,7 +2702,7 @@ namespace ace{
 	{
 	public:
 
-		virtual eMouseButtonState GetButtonState() const = 0;
+		virtual const MouseButtonState GetButtonState() const = 0;
 
 		virtual const double GetRotation() const = 0;
 	};
@@ -2881,11 +2714,11 @@ namespace ace{
 	class SideButton:public IMouseButtonState
 	{
 	private:
-		eMouseButtonState m_eMouseButtonState;
+		MouseButtonState m_mouseButtonState;
 	public:
-		eMouseButtonState GetButtonState() const;
+		const MouseButtonState GetButtonState() const;
 		SideButton(){}
-		SideButton(eMouseButtonState eMouseButtonState,bool doubleClicked);
+		SideButton(MouseButtonState mouseButtonState,bool doubleClicked);
 	};
 };
 
@@ -2895,12 +2728,12 @@ namespace ace{
 	class MiddleButton : public IMouseWheelableButtonState
 	{
 	private:
-		eMouseButtonState m_eMouseButtonState;
+		MouseButtonState m_mouseButtonState;
 		double m_rotation;
 	public:
-		eMouseButtonState GetButtonState() const;
+		const MouseButtonState GetButtonState() const;
 		const double GetRotation() const;
-		MiddleButton(eMouseButtonState eMouseButtonState,double rotation);
+		MiddleButton(MouseButtonState mouseButtonState,double rotation);
 		MiddleButton(){}
 	};
 };
@@ -2926,154 +2759,154 @@ namespace ace{
 
 namespace ace{
 
-	enum eKeys
+	enum class Keys:int
 	{
-		ACE_KEY_UNKNOWN,
-		ACE_KEY_SPACE,
-		ACE_KEY_APOSTROPHE,
-		ACE_KEY_COMMA,
-		ACE_KEY_MINUS,
-		ACE_KEY_PERIOD,
-		ACE_KEY_SLASH,
-		ACE_KEY_0,
-		ACE_KEY_1,
-		ACE_KEY_2,
-		ACE_KEY_3,
-		ACE_KEY_4,
-		ACE_KEY_5,
-		ACE_KEY_6,
-		ACE_KEY_7,
-		ACE_KEY_8,
-		ACE_KEY_9,
-		ACE_KEY_SEMICOLON,
-		ACE_KEY_EQUAL,
-		ACE_KEY_A,
-		ACE_KEY_B,
-		ACE_KEY_C,
-		ACE_KEY_D,
-		ACE_KEY_E,
-		ACE_KEY_F,
-		ACE_KEY_G,
-		ACE_KEY_H,
-		ACE_KEY_I,
-		ACE_KEY_J,
-		ACE_KEY_K,
-		ACE_KEY_L,
-		ACE_KEY_M,
-		ACE_KEY_N,
-		ACE_KEY_O,
-		ACE_KEY_P,
-		ACE_KEY_Q,
-		ACE_KEY_R,
-		ACE_KEY_S,
-		ACE_KEY_T,
-		ACE_KEY_U,
-		ACE_KEY_V,
-		ACE_KEY_W,
-		ACE_KEY_X,
-		ACE_KEY_Y,
-		ACE_KEY_Z,
-		ACE_KEY_LEFT_BRACKET,
-		ACE_KEY_BACKSLASH,
-		ACE_KEY_RIGHT_BRACKET,
-		ACE_KEY_GRAVE_ACCENT,
-		ACE_KEY_WORLD_1,
-		ACE_KEY_WORLD_2,
-		ACE_KEY_ESCAPE,
-		ACE_KEY_ENTER,
-		ACE_KEY_TAB,
-		ACE_KEY_BACKSPACE,
-		ACE_KEY_INSERT,
-		ACE_KEY_DELETE,
-		ACE_KEY_RIGHT,
-		ACE_KEY_LEFT,
-		ACE_KEY_DOWN,
-		ACE_KEY_UP,
-		ACE_KEY_PAGE_UP,
-		ACE_KEY_PAGE_DOWN,
-		ACE_KEY_HOME,
-		ACE_KEY_END,
-		ACE_KEY_CAPS_LOCK,
-		ACE_KEY_SCROLL_LOCK,
-		ACE_KEY_NUM_LOCK,
-		ACE_KEY_PRINT_SCREEN,
-		ACE_KEY_PAUSE,
-		ACE_KEY_F1,
-		ACE_KEY_F2,
-		ACE_KEY_F3,
-		ACE_KEY_F4,
-		ACE_KEY_F5,
-		ACE_KEY_F6,
-		ACE_KEY_F7,
-		ACE_KEY_F8,
-		ACE_KEY_F9,
-		ACE_KEY_F10,
-		ACE_KEY_F11,
-		ACE_KEY_F12,
-		ACE_KEY_F13,
-		ACE_KEY_F14,
-		ACE_KEY_F15,
-		ACE_KEY_F16,
-		ACE_KEY_F17,
-		ACE_KEY_F18,
-		ACE_KEY_F19,
-		ACE_KEY_F20,
-		ACE_KEY_F21,
-		ACE_KEY_F22,
-		ACE_KEY_F23,
-		ACE_KEY_F24,
-		ACE_KEY_F25,
-		ACE_KEY_KP_0,
-		ACE_KEY_KP_1,
-		ACE_KEY_KP_2,
-		ACE_KEY_KP_3,
-		ACE_KEY_KP_4,
-		ACE_KEY_KP_5,
-		ACE_KEY_KP_6,
-		ACE_KEY_KP_7,
-		ACE_KEY_KP_8,
-		ACE_KEY_KP_9,
-		ACE_KEY_KP_DECIMAL,
-		ACE_KEY_KP_DIVIDE,
-		ACE_KEY_KP_MULTIPLY,
-		ACE_KEY_KP_SUBTRACT,
-		ACE_KEY_KP_ADD,
-		ACE_KEY_KP_ENTER,
-		ACE_KEY_KP_EQUAL,
-		ACE_KEY_LEFT_SHIFT,
-		ACE_KEY_LEFT_CONTROL,
-		ACE_KEY_LEFT_ALT,
-		ACE_KEY_LEFT_SUPER,
-		ACE_KEY_RIGHT_SHIFT,
-		ACE_KEY_RIGHT_CONTROL,
-		ACE_KEY_RIGHT_ALT,
-		ACE_KEY_RIGHT_SUPER,
-		ACE_KEY_MENU,
-		ACE_KEY_LAST,
+		Unknown,
+		Space,
+		Apostrophe,
+		Comma,
+		Minus,
+		Period,
+		Slash,
+		Num0,
+		Num1,
+		Num2,
+		Num3,
+		Num4,
+		Num5,
+		Num6,
+		Num7,
+		Num8,
+		Num9,
+		Semicolon,
+		Equal,
+		A,
+		B,
+		C,
+		D,
+		E,
+		F,
+		G,
+		H,
+		I,
+		J,
+		K,
+		L,
+		M,
+		N,
+		O,
+		P,
+		Q,
+		R,
+		S,
+		T,
+		U,
+		V,
+		W,
+		X,
+		Y,
+		Z,
+		LeftBracket,
+		Backslash,
+		RightBracket,
+		GraveAccent,
+		World1,
+		World2,
+		Escape,
+		Enter,
+		Tab,
+		Backspace,
+		Insert,
+		Delete,
+		Right,
+		Left,
+		Down,
+		Up,
+		PageUp,
+		PageDown,
+		Home,
+		End,
+		CapsLock,
+		ScrollLock,
+		NumLock,
+		PrintScreen,
+		Pause,
+		F1,
+		F2,
+		F3,
+		F4,
+		F5,
+		F6,
+		F7,
+		F8,
+		F9,
+		F10,
+		F11,
+		F12,
+		F13,
+		F14,
+		F15,
+		F16,
+		F17,
+		F18,
+		F19,
+		F20,
+		F21,
+		F22,
+		F23,
+		F24,
+		F25,
+		Keypad0,
+		Keypad1,
+		Keypad2,
+		Keypad3,
+		Keypad4,
+		Keypad5,
+		Keypad6,
+		Keypad7,
+		Keypad8,
+		Keypad9,
+		KeypadDecimal,
+		KeypadDivide,
+		KeypadMultiply,
+		KeypadSubstract,
+		KeypadAdd,
+		KeypadEnter,
+		KeypadEqual,
+		LeftShift,
+		LeftControl,
+		LeftAlt,
+		LeftWin,
+		RightShift,
+		RightControl,
+		RightAlt,
+		RightWin,
+		Menu,
+		Last,
 		MAX
 	};
 
-	enum eKeyboardButtonState
+	enum class KeyState:int
 	{
-		KEYBOARD_PUSH, KEYBOARD_PULL, KEYBOARD_HOLD, KEYBOARD_FREE
+		Push, Pull, Hold, Free
 	};
 
 	class Keyboard
 	{
 	public:
-		virtual const eKeyboardButtonState GetKeyState(eKeys key) = 0;
+		virtual const KeyState GetKeyState(Keys key) = 0;
 	};
 
 };
 
 namespace ace{
 
-	enum eJoystickButtonState
+	enum class JoystickButtonState:int
 	{
-		ACE_JOYSTICK_BUTTON_PUSH,
-		ACE_JOYSTICK_BUTTON_PULL,
-		ACE_JOYSTICK_BUTTON_FREE,
-		ACE_JOYSTICK_BUTTON_HOLD
+		Push,
+		Pull,
+		Free,
+		Hold
 	};
 
 	enum eJoystickButtons
@@ -3101,7 +2934,7 @@ namespace ace{
 		virtual const int GetAxesCount() = 0;
 
 
-		virtual const eJoystickButtonState GetButtonState(int at) = 0;
+		virtual const JoystickButtonState GetButtonState(int at) = 0;
 
 
 		virtual const float GetAxisState(int at) = 0;
@@ -3326,6 +3159,67 @@ namespace ace
 	};
 }
 
+#include <iterator>
+#include <vector>
+#include <memory>
+
+namespace ace
+{
+	class File : public IReference
+	{
+	private:
+		// static ファイルとstream ファイルの参照を持つ
+	public:
+		virtual ~File() { }
+		virtual void SetRootDirectories(const astring& path) = 0;
+		virtual void SetRootDirectories(const astring& path, const astring& path2) = 0;
+		virtual void SetRootDirectories(const astring& path, const astring& path2, const astring& path3) = 0;
+		virtual void GetRootDirectories(std::vector<std::reference_wrapper<Path>>& rootPathes) const = 0;
+		virtual void EnumerateFiles(const astring& path) const = 0;
+		virtual void EnumerateFiles(const astring& path, const astring& searchPattern) const = 0;
+		virtual void EnumerateFiles(const astring& path, const astring& searchPattern, bool isRecursive) const = 0;
+		virtual bool Exists(const astring& path) const = 0;
+		virtual StaticFile* CreateStaticFile(const astring& path) = 0;
+		virtual StreamFile* CreateStreamFile(const astring& path) = 0;
+	};
+}
+
+
+namespace ace
+{
+	class Path
+	{
+	public:
+		virtual ~Path() { };
+		virtual astring ToAstring() const = 0;
+		virtual std::iterator < std::forward_iterator_tag, Path > Begin() const = 0;
+		virtual std::iterator < std::forward_iterator_tag, Path > End() const = 0;
+	};
+}
+
+
+
+namespace ace
+{
+	class StaticFile : public IReference
+	{
+	private:
+	public:
+		virtual ~StaticFile() { };
+	};
+}
+
+
+namespace ace
+{
+	class StreamFile : public IReference
+	{
+	private:
+	public:
+		virtual ~StreamFile() { };
+	};
+}
+
 
 
 namespace ace
@@ -3461,6 +3355,27 @@ namespace ace
 	};
 }
 
+
+
+namespace ace
+{
+	class Texture
+		: public IReference
+	{
+	protected:
+		Texture() {}
+		virtual ~Texture() {}
+
+	public:
+
+		/**
+		@brief	テクスチャのクラスの種類を取得する。
+		@return	種類
+		*/
+		virtual eTextureClassType GetType() = 0;
+	};
+}
+
 //----------------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------------
@@ -3480,7 +3395,7 @@ namespace ace {
 	};
 
 	class Texture2D
-		: public IReference
+		: public Texture
 	{
 	protected:
 		eTextureClassType	m_type;
@@ -3496,16 +3411,10 @@ namespace ace {
 		virtual Vector2DI GetSize() const = 0;
 
 		/**
-		@brief	フィルタを取得する。
-		@return	フィルタ
+			@brief	テクスチャのフォーマットを取得する。
+			@return	フォーマット
 		*/
-		virtual eTextureFilterType GetFilter() const = 0;
-
-		/**
-		@brief	フィルタを設定する。
-		@param	filter	フィルタ
-		*/
-		virtual void SetFilter(eTextureFilterType filter) = 0;
+		virtual eTextureFormat GetFormat() const = 0;
 
 		/**
 		@brief	テクスチャをファイルに保存する。
@@ -3525,10 +3434,10 @@ namespace ace {
 		@brief	テクスチャをアンロックする。
 		*/
 		virtual void Unlock() = 0;
-		
+
 		/**
-			@brief	テクスチャのクラスの種類を取得する。
-			@return	種類
+		@brief	テクスチャのクラスの種類を取得する。
+		@return	種類
 		*/
 		virtual eTextureClassType GetType() { return TEXTURE_CLASS_TEXTURE2D; }
 	};
@@ -3567,13 +3476,37 @@ namespace ace {
 		@brief	テクスチャのクラスの種類を取得する。
 		@return	種類
 		*/
-		virtual eTextureClassType GetType() { return TEXTURE_CLASS_RENDERTEXTURE; }
+		virtual eTextureClassType GetType() { return TEXTURE_CLASS_RENDERTEXTURE2D; }
 	};
 
 	//----------------------------------------------------------------------------------
 	//
 	//----------------------------------------------------------------------------------
 
+}
+
+
+
+namespace ace
+{
+	/**
+	@brief	キューブマップ
+	*/
+	class CubemapTexture
+		: public Texture
+	{
+	protected:
+		CubemapTexture() {}
+		virtual ~CubemapTexture() {}
+
+	public:
+
+		/**
+		@brief	テクスチャのクラスの種類を取得する。
+		@return	種類
+		*/
+		virtual eTextureClassType GetType() override { return TEXTURE_CLASS_CUBEMAPTEXTURE; }
+	};
 }
 
 
@@ -3639,8 +3572,17 @@ namespace ace {
 		virtual Vector3DF GetVector3DF(const achar* name) = 0;
 		virtual void SetVector3DF(const achar* name, Vector3DF value) = 0;
 
+		virtual Vector4DF GetVector4DF(const achar* name) = 0;
+		virtual void SetVector4DF(const achar* name, Vector4DF value) = 0;
+
 		virtual void SetTexture2D(const achar* name, Texture2D* value) = 0;
 		virtual void SetShader2D(Shader2D* shader) = 0;
+
+		virtual TextureFilterType GetTextureFilterType(const achar* name) = 0;
+		virtual void SetTextureFilterType(const achar* name, TextureFilterType filter) = 0;
+
+		virtual TextureWrapType GetTextureWrapType(const achar* name) = 0;
+		virtual void SetTextureWrapType(const achar* name, TextureWrapType wrap) = 0;
 
 #if! SWIG
 		std::shared_ptr<Texture2D> GetTexture2D(const achar* name)
@@ -3681,6 +3623,31 @@ namespace ace {
 }
 
 
+namespace ace
+{
+	/**
+	@brief	フォントの情報が記録されているクラス
+	*/
+	class Font
+		:public IReference
+	{
+	private:
+
+	protected:
+		Font(){}
+		virtual ~Font(){}
+	public:
+		/**
+		@brief	描画テキストと描画方向を与えると、その文字の描画領域を返す。
+		@param	text	描画テキスト
+		@param	writingDirection	描画方向
+		@return	文字の描画領域
+		*/
+		virtual Vector2DI CalcTextureSize(achar* text, WritingDirection writingDirection) = 0;
+	};
+}
+
+
 
 namespace ace
 {
@@ -3697,6 +3664,41 @@ namespace ace
 		virtual ~Effect(){}
 	public:
 
+	};
+}
+
+
+namespace ace
+{
+	/**
+	@brief	フォントの情報が記録されているクラス
+	*/
+	class Chip2D
+		:public IReference
+	{
+	private:
+
+	protected:
+		Chip2D(){}
+		virtual ~Chip2D(){}
+	public:
+		virtual Texture2D* GetTexture() const = 0;
+		virtual void SetTexture(Texture2D* texture) = 0;
+
+		virtual const RectF GetSrc() const = 0;
+		virtual void SetSrc(RectF src) = 0;
+
+		virtual const Color GetColor() const = 0;
+		virtual void SetColor(Color color) = 0;
+
+		virtual const bool GetTurnLR() const = 0;
+		virtual void SetTurnLR(bool turnLR) = 0;
+
+		virtual const bool GetTurnUL() const = 0;
+		virtual void SetTurnUL(bool turnUL) = 0;
+
+		virtual const AlphaBlend GetAlphaBlendMode() const = 0;
+		virtual void SetAlphaBlendMode(AlphaBlend alphaBlend) = 0;
 	};
 }
 
@@ -3722,9 +3724,8 @@ namespace ace
 			@param	parentBoneIndex	親ボーンのインデックス(親がない場合は-1)
 			@param	rotationOrder	ボーンの回転行列の計算方法
 			@param	localMat	ボーンのローカル変形行列
-			@param	globalMatInv	ボーンの全体への逆行列
 		*/
-		virtual void AddBone(const achar* name, int32_t parentBoneIndex, eRotationOrder rotationOrder, const Matrix44& localMat, const Matrix44& globalMatInv) = 0;
+		virtual void AddBone(const achar* name, int32_t parentBoneIndex, eRotationOrder rotationOrder, const Matrix44& localMat) = 0;
 	};
 }
 
@@ -3743,9 +3744,6 @@ namespace ace
 	protected:
 		Mesh(){}
 		virtual ~Mesh(){}
-
-		virtual Deformer* GetDeformer_() = 0;
-
 	public:
 
 		/**
@@ -3774,28 +3772,27 @@ namespace ace
 			@param	index1	頂点インデックス1
 			@param	index2	頂点インデックス2
 			@param	index3	頂点インデックス3
+			@param	materialIndex	材質インデックス
 		*/
-		virtual void AddFace(int32_t index1, int32_t index2, int32_t index3) = 0;
+		virtual void AddFace(int32_t index1, int32_t index2, int32_t index3, int32_t materialIndex) = 0;
 
 		/**
-			@brief	素材を設定する。
-			@param	materialIndex	素材のインデックス
-			@param	faceCount	面数
-			@note
-			素材は追加された順に先頭から面数の数だけ割り当てられる。
+			@brief	ボーンとの接続設定を追加する。
+			@param	targetIndex	対象ボーンインデックス
+			@param	boneToMesh	ボーンの行列をメッシュの行列に変換する行列
 		*/
-		virtual void AddMaterialCount(int32_t materialIndex, int32_t faceCount) = 0;
+		virtual void AddBoneConnector(int32_t targetIndex, const Matrix44& boneToMesh) = 0;
+
+		/**
+			@brief	材質を追加する。
+			@return	材質のインデックス
+		*/
+		virtual int32_t AddMaterial() = 0;
 
 		/**
 			@brief	設定した値をGPUに送信する。
 		*/
 		virtual void SendToGPUMemory() = 0;
-
-		/**
-			@brief	デフォーマーを設定する。
-			@param	deformer	デフォーマー
-		*/
-		virtual void SetDeformer(Deformer* deformer) = 0;
 
 		/**
 		@brief	内部シェーダーを使用する場合のカラーテクスチャを設定する。
@@ -3823,21 +3820,6 @@ namespace ace
 		AddMaterialCountを実行した後でないと無効になる。
 		*/
 		virtual void SetSpecularTexture(int32_t materialIndex, Texture2D* texture) = 0;
-
-#if !SWIG
-		std::shared_ptr<Deformer> GetSource()
-		{
-			auto o = GetDeformer_();
-			SafeAddRef(o);
-			return CreateSharedPtrWithReleaseDLL(o);
-		}
-
-		void SetDeformer(std::shared_ptr<Deformer> deformer)
-		{
-			SetDeformer(deformer.get());
-		}
-#endif
-
 	};
 };
 
@@ -4077,12 +4059,15 @@ protected:
 	virtual Texture2D* CreateTexture2D_(const achar* path) = 0;
 	virtual Texture2D* CreateEmptyTexture2D_(int32_t width, int32_t height, eTextureFormat format) = 0;
 	virtual RenderTexture2D* CreateRenderTexture2D_(int32_t width, int32_t height, eTextureFormat format) = 0;
-	virtual Shader2D* CreateShader2D_( const achar* shaderText, ShaderVariableProperty* variableProperties, int32_t variablePropertiesCount) = 0;
+	virtual CubemapTexture* CreateCubemapTextureFrom6ImageFiles_(const achar* front, const achar* left, const achar* back, const achar* right, const achar* top, const achar* bottom) = 0;
+	virtual Shader2D* CreateShader2D_( const achar* shaderText) = 0;
 	virtual Material2D* CreateMaterial2D_(Shader2D* shader) = 0;
 	virtual Mesh* CreateMesh_() = 0;
 	virtual Deformer* CreateDeformer_() = 0;
 	virtual Model* CreateModel_(const achar* path) = 0;
 	virtual Effect* CreateEffect_(const achar* path) = 0;
+	virtual Font* CreateFont_(const achar* path) = 0;
+	virtual Chip2D* CreateChip2D_() = 0;
 
 public:
 	Graphics(){}
@@ -4116,23 +4101,33 @@ public:
 	@param	format	フォーマット
 	@return	テクスチャ
 	*/
-	std::shared_ptr<RenderTexture2D> CreateRenderTexture(int32_t width, int32_t height, eTextureFormat format){ return CreateSharedPtrWithReleaseDLL(CreateRenderTexture2D_(width, height, format)); }
+	std::shared_ptr<RenderTexture2D> CreateRenderTexture2D(int32_t width, int32_t height, eTextureFormat format){ return CreateSharedPtrWithReleaseDLL(CreateRenderTexture2D_(width, height, format)); }
+
+	/**
+	@brief	6枚の画像ファイルからキューブマップテクスチャを生成する。
+	@param	front	前方向の画像ファイルへの相対パス
+	@param	left	左方向の画像ファイルへの相対パス
+	@param	back	後ろ方向の画像ファイルへの相対パス
+	@param	right	右方向の画像ファイルへの相対パス
+	@param	top		上方向の画像ファイルへの相対パス
+	@param	bottom	下方向の画像ファイルへの相対パス
+	@return	キューブマップ
+	*/
+	std::shared_ptr<CubemapTexture> CreateCubemapTextureFrom6ImageFiles(const achar* front, const achar* left, const achar* back, const achar* right, const achar* top, const achar* bottom)
+	{
+		return CreateSharedPtrWithReleaseDLL(
+			CreateCubemapTextureFrom6ImageFiles_(
+			front, left, back, right, top, bottom));
+	}
 
 	/**
 	@brief	シェーダー(2D)を生成する。
 	@param	shaderText						シェーダーのコード
-	@param	variableProperties				シェーダーで使用可能な外部入力可能な変数
 	@return	シェーダー(2D)
 	*/
-	std::shared_ptr<Shader2D> CreateShader2D(
-		const achar* shaderText,
-		std::vector <ShaderVariableProperty>& variableProperties)
+	std::shared_ptr<Shader2D> CreateShader2D(const achar* shaderText)
 	{
-		return CreateSharedPtrWithReleaseDLL(
-			CreateShader2D_(
-			shaderText,
-			variableProperties.size() > 0 ? &(variableProperties[0]) : nullptr,
-			variableProperties.size()));
+		return CreateSharedPtrWithReleaseDLL(CreateShader2D_(shaderText));
 	}
 
 	/**
@@ -4188,13 +4183,36 @@ public:
 		return CreateSharedPtrWithReleaseDLL(effect);
 	}
 
+	/**
+	@brief	2Dチップを生成する。
+	@param	texture	テクスチャ
+	@return	2Dチップ
+	*/
+	std::shared_ptr<Chip2D> CreateChip2D()
+	{
+		auto chip = CreateChip2D_();
+		return CreateSharedPtrWithReleaseDLL(chip);
+	}
+
+#undef CreateFont
+	/**
+	@brief	フォントを生成する。
+	@param	path	パス
+	@return	フォント
+	*/
+	std::shared_ptr<Font> CreateFont(const achar* path)
+	{
+		auto font = CreateFont_(path);
+		return CreateSharedPtrWithReleaseDLL(font);
+	}
+
 #endif
 
 	/**
 	@brief	描画ランタイムの種類を取得する。
 	@return	種類
 	*/
-	virtual eGraphicsType GetGraphicsType() const = 0;
+	virtual GraphicsDeviceType GetGraphicsDeviceType() const = 0;
 
 };
 
@@ -4300,6 +4318,11 @@ namespace ace {
 		virtual void ChangeScene(CoreScene* scene) = 0;
 
 		/**
+			@brief	ウインドウを閉じる。
+		*/
+		virtual void Close() = 0;
+
+		/**
 			@brief	スクリーンショットをpngとして保存する。
 			@param	path	出力先
 		*/
@@ -4324,6 +4347,12 @@ namespace ace {
 		virtual void SetTargetFPS(int32_t fps) = 0;
 
 		/**
+			@brief	Windowsの場合、ウインドウのハンドルを返す。
+			@return	ウインドウハンドル
+		*/
+		virtual void* GetWindowHandle() const = 0;
+
+		/**
 		@brief キーボードの入力を扱うKeyboardクラスを取得する。
 		*/
 		virtual Keyboard* GetKeyboard() = 0;
@@ -4337,6 +4366,11 @@ namespace ace {
 		@brief 接続されているジョイスティックの入力を扱うJoystickContainerクラスを取得する。
 		*/
 		virtual JoystickContainer* GetJoystickContainer() = 0;
+
+		/**
+		@brief 通常のファイルとパックファイルに対する読み込みをサポートするFileクラスを取得する。
+		*/
+		virtual File* GetFile() = 0;
 
 		/**
 			@brief	ログ出力を扱うLogクラスを取得する。
@@ -4391,6 +4425,10 @@ namespace ace
 		friend class Engine;
 		friend class Layer;
 		friend class CameraObject3D;
+		friend class PostEffectGrayScale;
+		friend class PostEffectGaussianBlur;
+		friend class PostEffectLightBloom;
+		friend class PostEffectSepia;
 
 	private:
 		std::shared_ptr<CorePostEffect>	m_corePostEffect;
@@ -4430,13 +4468,10 @@ namespace ace
 	class PostEffectGrayScale : public PostEffect
 	{
 	private:
+		std::shared_ptr<ace::Material2D>	material2d;
 
-		std::shared_ptr<ace::Shader2D>		m_shader;
-		std::shared_ptr<ace::Material2D>	m_material2d;
-		PostEffectGrayScale() = default;
 	public:
-		PostEffectGrayScale(Graphics *g);
-
+		PostEffectGrayScale();
 		virtual ~PostEffectGrayScale() = default;
 
 		virtual void OnDraw(std::shared_ptr<RenderTexture2D> dst, std::shared_ptr<RenderTexture2D> src) override;
@@ -4458,13 +4493,9 @@ namespace ace
 	class PostEffectSepia : public PostEffect
 	{
 	private:
-
-		std::shared_ptr<ace::Shader2D>		m_shader;
-		std::shared_ptr<ace::Material2D>	m_material2d;
-		PostEffectSepia() = default;
+		std::shared_ptr<ace::Material2D>	material2d;
 	public:
-		PostEffectSepia(Graphics *g);
-
+		PostEffectSepia();
 		virtual ~PostEffectSepia() = default;
 
 		virtual void OnDraw(std::shared_ptr<RenderTexture2D> dst, std::shared_ptr<RenderTexture2D> src) override;
@@ -4482,29 +4513,22 @@ namespace ace
 	/**
 	@brief	ガウスぼかしをかけるポストエフェクトクラス
 	*/
-
-
-
-
 	class PostEffectGaussianBlur : public PostEffect
 	{
 	private:
+		std::shared_ptr<ace::Material2D>	material2dX;
+		std::shared_ptr<ace::Material2D>	material2dY;
+		std::shared_ptr<RenderTexture2D>	tempTexture;
 
-		std::shared_ptr<ace::Shader2D>		m_shaderX, m_shaderY;
-		std::shared_ptr<ace::Material2D>	m_material2dX, m_material2dY;
-		ace::Graphics *m_graphics;
-		PostEffectGaussianBlur() = default;
-		
 		float intensity = 5.0f;
 
 	public:
-		PostEffectGaussianBlur(Graphics *g);
-
+		PostEffectGaussianBlur();
 		virtual ~PostEffectGaussianBlur() = default;
 
 		/**
-		@brief ぼかしの強さを設定する。初期値は0.5
-		@detail 実質的にはガウス関数の分散にあたる値の平方根。1.0fから5.0fあたりが適当
+		@brief ぼかしの強さを設定する。
+		@detail 実質的にはガウス関数の分散にあたる値の平方根
 		*/
 		void SetIntensity(float const value){ if (value <= 0.0f){ return; }intensity = value; }
 
@@ -4513,6 +4537,60 @@ namespace ace
 	};
 
 }
+
+#include<memory>
+#include <vector>
+
+
+namespace ace
+{
+
+	/**
+		@brief	輝度の高い画素のみをぼかして加算するポストエフェクト
+	*/
+	class PostEffectLightBloom : public PostEffect
+	{
+	private:
+		std::shared_ptr<ace::Material2D>	material, material2dX, material2dY;
+
+		std::shared_ptr<RenderTexture2D>	tempTexture;
+		std::shared_ptr<RenderTexture2D>	copiedTexture;
+
+		float intensity = 5.0f;
+		float threshold = 1.0f;
+		float power = 1.0f;
+
+	public:
+		PostEffectLightBloom();
+		virtual ~PostEffectLightBloom() = default;
+
+		/**
+		@brief ぼかしの強さを設定する。
+		@note
+		実質的にはガウス関数の分散にあたる値の平方根。
+		*/
+		void SetIntensity(float const value){ if (value <= 0.0f){ return; }intensity = value; }
+
+		/**
+		@brief	ぼかすピクセルの閾値を設定する。
+		@note
+		この閾値を超えた値がぼかされ加算される。
+		*/
+		void SetThreshold(float const value){ threshold = value; }
+
+		/**
+			@brief	ぼかされた値を加算する強さを指定する。
+			@note
+			この値とぼかされた値を乗算した値が加算される。
+		*/
+		void SetPower(float const value) { power = value; }
+
+		virtual void OnDraw(std::shared_ptr<RenderTexture2D> dst, std::shared_ptr<RenderTexture2D> src) override;
+	};
+
+}
+
+
 
 namespace ace
 {
@@ -4540,6 +4618,8 @@ namespace ace
 		virtual void OnUpdate() = 0;
 
 	public:
+		typedef std::shared_ptr<Object2DComponent> Ptr;
+
 		/**
 			@brief	コンストラクタ
 		*/
@@ -4578,6 +4658,8 @@ namespace ace
 }
 
 
+
+
 namespace ace
 {
 	class Layer2D;
@@ -4604,6 +4686,8 @@ namespace ace
 		virtual void OnUpdate() = 0;
 
 	public:
+		typedef std::shared_ptr<Layer2DComponent> Ptr;
+
 		/**
 			@brief	コンストラクタ
 		*/
@@ -4642,6 +4726,8 @@ namespace ace
 }
 
 
+
+
 namespace ace
 {
 	class Scene;
@@ -4668,6 +4754,8 @@ namespace ace
 		virtual void OnUpdate() = 0;
 
 	public:
+		typedef std::shared_ptr<SceneComponent> Ptr;
+
 		/**
 			@brief	コンストラクタ
 		*/
@@ -4719,6 +4807,9 @@ namespace ace
 	class Layer
 	{
 		friend class Scene;
+
+	public:
+		typedef std::shared_ptr<Layer> Ptr;
 
 	protected:
 		std::shared_ptr<CoreLayer>	m_commonObject;
@@ -4819,13 +4910,12 @@ namespace ace
 		friend class Layer2D;
 
 	public:
-		typedef std::shared_ptr<Object2D> Object2DPtr;
-		typedef std::shared_ptr<Object2DComponent> ComponentPtr;
+		typedef std::shared_ptr<Object2D> Ptr;
 
 	private:
 		Layer2D* m_owner;
-		std::list<Object2DPtr> m_children;
-		std::map<astring, ComponentPtr> m_components;
+		std::list<Object2D::Ptr> m_children;
+		std::map<astring, Object2DComponent::Ptr> m_components;
 		bool m_isUpdated;
 		bool m_isDrawn;
 
@@ -4849,6 +4939,14 @@ namespace ace
 			@brief	オーバーライドして、このオブジェクトに対する追加の描画処理を記述できる。
 		*/
 		virtual void OnDrawAdditionally();
+
+		/**
+		@brief	追加のテクスチャを描画する。
+		*/
+		void DrawSpriteAdditionally(Vector2DF pos1, Vector2DF pos2, Vector2DF pos3, Vector2DF pos4,
+			Color col1, Color col2, Color col3, Color col4,
+			Vector2DF uv1, Vector2DF uv2, Vector2DF uv3, Vector2DF uv4,
+			Texture2D* texture, AlphaBlend alphaBlend, int32_t priority);
 
 	public:
 		/**
@@ -4899,28 +4997,28 @@ namespace ace
 			@param	child	追加する子オブジェクト
 			@param	mode	子オブジェクトの同期モード
 		*/
-		void AddChild(const Object2DPtr& child, eChildMode mode);
+		void AddChild(const Object2D::Ptr& child, eChildMode mode);
 		/**
 			@brief	指定した子オブジェクトをこのインスタンスから削除する。
 			@param	child	削除する子オブジェクト
 		*/
-		void RemoveChild(const Object2DPtr& child);
+		void RemoveChild(const Object2D::Ptr& child);
 		/**
 			@brief	このオブジェクトが保持している子オブジェクトを含むコンテナを取得する。
 		*/
-		const std::list<Object2DPtr>& GetChildren() const;
+		const std::list<Object2D::Ptr>& GetChildren() const;
 
 		/**
 			@brief	指定したコンポーネントをこのインスタンスに追加する。
 			@param	component	追加するコンポーネント
 			@param	key			コンポーネントに関連付けるキー
 		*/
-		void AddComponent(const ComponentPtr& component, astring key);
+		void AddComponent(const Object2DComponent::Ptr& component, astring key);
 		/**
 			@brief	指定したキーを持つコンポーネントを取得する。
 			@param	key		取得するコンポーネントを示すキー
 		*/
-		ComponentPtr& GetComponent(astring key);
+		Object2DComponent::Ptr& GetComponent(astring key);
 		/**
 			@brief	指定したコンポーネントを削除する。
 			@param	key		削除するコンポーネントを示すキー
@@ -4973,6 +5071,8 @@ namespace ace
 		CoreObject2D* GetCoreObject() const;
 
 	public:
+		typedef std::shared_ptr<TextureObject2D> Ptr;
+
 		/**
 			@brief	コンストラクタ
 		*/
@@ -4992,7 +5092,15 @@ namespace ace
 		*/
 		void SetTexture(std::shared_ptr<Texture2D> texture);
 
+		/**
+		@brief	テクスチャ上の描画範囲を取得する。
+		*/
 		RectF GetSrc() const;
+
+		/**
+		@brief	テクスチャ上の描画範囲を設定する。
+		@param value 描画するテクスチャ上の範囲。(フィールドのいずれかが0より小さかったらテクスチャ全体を描画する。)
+		*/
 		void SetSrc(RectF value);
 
 		/**
@@ -5043,17 +5151,20 @@ namespace ace
 		/**
 			@brief	このオブジェクトのブレンディング モードを取得する。
 		*/
-		eAlphaBlend GetAlphaBlendMode() const;
+		AlphaBlend GetAlphaBlendMode() const;
 		/**
 			@brief	このオブジェクトのブレンディング モードを設定する。
 		*/
-		void SetAlphaBlendMode(eAlphaBlend alphaBlend);
+		void SetAlphaBlendMode(AlphaBlend alphaBlend);
 	};
 }
 
 
 namespace ace
 {
+	/**
+		@brief	2Dレイヤーの一部を描画するためのカメラ
+	*/
 	class CameraObject2D : public Object2D
 	{
 	private:
@@ -5062,14 +5173,266 @@ namespace ace
 		CoreObject2D* GetCoreObject() const;
 
 	public:
+		typedef std::shared_ptr<CameraObject2D> Ptr;
+
 		CameraObject2D();
 		virtual ~CameraObject2D();
 
+		/**
+			@brief	描画元の領域を取得する。
+			@return	描画元
+		*/
 		RectI GetSrc() const;
+
+		/**
+		@brief	描画元の領域を設定する。
+		@param	value	描画元
+		*/
 		void SetSrc(RectI value);
 
+		/**
+		@brief	描画先の領域を取得する。
+		@return	描画先
+		*/
 		RectI GetDst() const;
+
+		/**
+		@brief	描画先の領域を設定する。
+		@param	value	描画先
+		*/
 		void SetDst(RectI value);
+	};
+}
+
+
+namespace ace
+{
+	class TextObject2D : public Object2D
+	{
+	private:
+		std::shared_ptr<CoreTextObject2D> m_coreObject;
+		std::shared_ptr<Font> m_font;
+
+		CoreObject2D* GetCoreObject() const;
+
+	public:
+		typedef std::shared_ptr<TextObject2D> Ptr;
+
+		TextObject2D();
+		virtual ~TextObject2D();
+
+		/**
+		@brief	このオブジェクトを描画する際の描画方向を取得する。
+		*/
+		const WritingDirection GetWritingDirection() const;
+
+		/**
+		@brief	このオブジェクトを描画する際のフォントハンドルを取得する。
+		*/
+		const std::shared_ptr<Font> GetFont() const;
+
+		/**
+		@brief 描画するテキストを取得する。
+		*/
+		const astring GetText() const;
+
+		/**
+		@brief	このオブジェクトの原点位置を取得する。この位置が、描画する際の描画・拡縮・回転の中心となる。
+		*/
+		const Vector2DF GetCenterPosition() const;
+
+		/**
+		@brief	このオブジェクトを描画する際に文字画像に合成する色を取得する。
+		*/
+		const Color GetColor() const;
+
+		/**
+		@brief	このオブジェクトを描画する際に左右反転するかどうかの真偽値を取得する。
+		*/
+		const bool GetTurnLR() const;
+
+		/**
+		@brief	このオブジェクトを描画する際に上下反転するかどうかの真偽値を取得する。
+		*/
+		const bool GetTurnUL() const;
+
+		/**
+		@brief	このオブジェクトの描画優先度を取得します。
+		*/
+		const int GetDrawingPriority() const;
+
+		/**
+		@brief	このオブジェクトを描画する際のブレンドモードを取得します。
+		*/
+		const AlphaBlend GetAlphaBlendMode() const;
+
+		/**
+		@brief	このオブジェクトを描画する際の描画方向を設定します。
+		*/
+		void SetWritingDirection(WritingDirection writingDirection);
+
+		/**
+		@brief	このオブジェクトを描画する際のフォントハンドルを設定する。
+		*/
+		void SetFont(std::shared_ptr<Font> font);
+
+		/**
+		@brief 描画するテキストを設定する。
+		*/
+		void SetText(astring text);
+
+		/**
+		@brief	このオブジェクトの原点位置を設定する。この位置が、描画する際の描画・拡縮・回転の中心となる。
+		*/
+		void SetCenterPosition(Vector2DF position);
+
+		/**
+		@brief	このオブジェクトを描画する際にテクスチャに合成する色を設定する。
+		*/
+		void SetColor(Color color);
+
+		/**
+		@brief	このオブジェクトを描画する際に左右反転するかどうかの真偽値を設定する。
+		*/
+		void SetTurnLR(bool turnLR);
+
+		/**
+		@brief	このオブジェクトを描画する際に上下反転するかどうかの真偽値を設定する。
+		*/
+		void SetTurnUL(bool turnUL);
+
+		/**
+		@brief	このオブジェクトの描画優先度を設定する。
+		*/
+		void SetDrawingPriority(int priority);
+
+		/**
+		@brief	このオブジェクトを描画する際のブレンドモードを設定する。
+		*/
+		void SetAlphaBlendMode(AlphaBlend alphaBlend);
+
+	};
+}
+
+
+namespace ace
+{
+	class EffectObject2D : public Object2D
+	{
+	private:
+		std::shared_ptr<CoreEffectObject2D> m_coreObject;
+
+		CoreObject2D* GetCoreObject() const;
+
+	public:
+		typedef std::shared_ptr<EffectObject2D> Ptr;
+
+		EffectObject2D();
+		virtual ~EffectObject2D();
+
+		/**
+		@brief	描画に使用するエフェクトを設定する。
+		@param	effect	エフェクト
+		*/
+		void SetEffect(std::shared_ptr<Effect> effect);
+
+
+		/**
+		@brief	設定されている全てのエフェクトを再生する。
+		*/
+		void Play();
+
+		/**
+		@brief	このオブジェクトから再生されたエフェクトを全て停止する。
+		*/
+		void Stop();
+
+		/**
+		@brief	このオブジェクトから再生されたエフェクトのルートを全て停止する。
+		*/
+		void StopRoot();
+
+		/**
+		@brief	このオブジェクトから再生されたエフェクトをオブジェクトに合わせて移動させるか取得する。
+		@return	フラグ
+		*/
+		bool GetSyncEffects();
+
+		/**
+		@brief	このオブジェクトから再生されたエフェクトをオブジェクトに合わせて移動させるか設定する。
+		@param	value	フラグ
+		*/
+		void SetSyncEffects(bool value);
+
+		/**
+		@brief	このオブジェクトから再生されるエフェクトの向きを取得する。
+		@return	value	回転量(度)
+		*/
+		float GetEffectRotation() const;
+
+		/**
+		@brief	このオブジェクトから再生されるエフェクトの向き(度)を指定する。
+		@param	value	回転量(度)
+		@note
+		2D表示だとエフェクトが画面に対して前後に表示されるように作成されていた場合、予期せぬ見た目で表示されてしまうことがある。
+		そのため、Y軸を中心にエフェクトを回転させ2Dとして違和感のない表示ができるようにする。
+		*/
+		void SetEffectRotation(float value);
+	};
+}
+#include <memory>
+
+namespace ace
+{
+	class MapObject2D : public Object2D
+	{
+	private:
+		std::shared_ptr<CoreMapObject2D> m_coreObject;
+		std::set<std::shared_ptr<Chip2D>> m_chips;
+
+		CoreObject2D* GetCoreObject() const;
+
+	public:
+		typedef std::shared_ptr<MapObject2D> Ptr;
+
+		/**
+		@brief	コンストラクタ
+		*/
+		MapObject2D();
+		/**
+		@brief	デストラクタ
+		*/
+		virtual ~MapObject2D();
+
+		/**
+		@brief	このオブジェクトの原点位置を取得する。この位置が、描画する際の描画・拡縮・回転の中心となる。
+		*/
+		const Vector2DF GetCenterPosition() const;
+
+		/**
+		@brief	このオブジェクトの描画優先度を取得します。
+		*/
+		const int GetDrawingPriority() const;
+
+		/**
+		@brief	このオブジェクトの原点位置を設定する。この位置が、描画する際の描画・拡縮・回転の中心となる。
+		*/
+		void SetCenterPosition(Vector2DF position);
+
+		/**
+		@brief	このオブジェクトの描画優先度を設定する。
+		*/
+		void SetDrawingPriority(int priority);
+
+		/**
+		@brief	このオブジェクトに描画チップを追加する。
+		*/
+		const bool AddChip(std::shared_ptr<Chip2D> chip);
+
+		/**
+		@brief	このオブジェクトから描画チップを削除する。
+		*/
+		const bool RemoveChip(std::shared_ptr<Chip2D> chip);
 	};
 }
 #include <memory>
@@ -5086,14 +5449,14 @@ namespace ace
 		friend class Scene;
 
 	public:
-		typedef std::shared_ptr<Object2D> ObjectPtr;
-		typedef std::shared_ptr<Layer2DComponent> ComponentPtr;
+		typedef std::shared_ptr<Layer2D> Ptr;
 
 	private:
 		std::shared_ptr<CoreLayer2D>	m_coreLayer;
-		std::list<ObjectPtr>			m_objects;
-		std::map<astring, ComponentPtr> m_components;
-		
+		std::list<Object2D::Ptr>		m_objects;
+		std::map<astring, Layer2DComponent::Ptr> m_components;
+		std::vector<Object2D::Ptr>		beVanished;
+
 		void BeginUpdateting();
 		void EndUpdateting();
 
@@ -5130,29 +5493,39 @@ namespace ace
 			@brief	指定した2Dオブジェクトをこのインスタンスに追加する。
 			@param	object	追加するオブジェクト
 		*/
-		void AddObject(const ObjectPtr& object);
+		void AddObject(const Object2D::Ptr& object);
 		/**
 			@brief	指定した2Dオブジェクトをこのインスタンスから削除する。
 			@param	object	削除するオブジェクト
 		*/
-		void RemoveObject(const ObjectPtr& object);
+		void RemoveObject(const Object2D::Ptr& object);
 
 		/**
 			@brief	指定したコンポーネントをこのインスタンスに追加する。
 			@param	component	追加するコンポーネント
 			@param	key			コンポーネントに関連付けるキー
 		*/
-		void AddComponent(const ComponentPtr& component, astring key);
+		void AddComponent(const Layer2DComponent::Ptr& component, astring key);
+
 		/**
 			@brief	指定したキーを持つコンポーネントを取得する。
 			@param	key		取得するコンポーネントを示すキー
 		*/
-		ComponentPtr& GetComponent(astring key);
+		Layer2DComponent::Ptr& GetComponent(astring key);
+
 		/**
 			@brief	指定したコンポーネントをこのインスタンスから削除する。
 			@param	key		削除するコンポーネントを示すキー
 		*/
 		void RemoveComponent(astring key);
+
+		/**
+		@brief	追加のテクスチャを描画する。
+		*/
+		void DrawSpriteAdditionally(Vector2DF pos1, Vector2DF pos2, Vector2DF pos3, Vector2DF pos4,
+			Color col1, Color col2, Color col3, Color col4,
+			Vector2DF uv1, Vector2DF uv2, Vector2DF uv3, Vector2DF uv4,
+			Texture2D* texture, AlphaBlend alphaBlend, int32_t priority);
 	};
 }
 
@@ -5281,6 +5654,18 @@ namespace ace
 		@param	angle	角度
 		*/
 		void SetRotation(Vector3DF angle);
+
+		/**
+		@brief	このインスタンスの親に対する現在の拡大率を取得する。
+		@return	拡大率
+		*/
+		Vector3DF GetScale() const;
+
+		/**
+		@brief	このインスタンスの親に対する現在の拡大率を設定する。
+		@param	scale	拡大率
+		*/
+		void SetScale(Vector3DF scale);
 	};
 }
 
@@ -5502,13 +5887,13 @@ namespace ace
 		@brief	このオブジェクトから再生されたエフェクトをオブジェクトに合わせて移動させるか取得する。
 		@return	フラグ
 		*/
-		bool GetDoesMoveEffects();
+		bool GetSyncEffects();
 
 		/**
 		@brief	このオブジェクトから再生されたエフェクトをオブジェクトに合わせて移動させるか設定する。
 		@param	value	フラグ
 		*/
-		void SetDoesMoveEffects(bool value);
+		void SetSyncEffects(bool value);
 	};
 }
 
@@ -5552,10 +5937,24 @@ namespace ace
 		void SetModel(std::shared_ptr<Model>& model);
 
 		/**
-			@brief	描画に使用するメッシュを設定する。
-			@param	mesh	メッシュ
+		@brief	描画に使用するメッシュを追加する。
+		@param	meshGroupIndex	メッシュグループのインデックス
+		@param	mesh	メッシュ
 		*/
-		void AddMesh(std::shared_ptr<Mesh>& mesh);
+		void AddMesh(std::shared_ptr<Mesh> mesh);
+
+		/**
+		@brief	描画に使用するデフォーマーを設定する。
+		@param	meshGroupIndex	メッシュグループのインデックス
+		@param	deformer	デフォーマー
+		*/
+		void SetDeformer(std::shared_ptr<Deformer> deformer);
+
+		/**
+		@brief	アニメーションを再生する。
+		@param	name	アニメーションの名称
+		*/
+		void PlayAnimation(const achar* name);
 	};
 }
 
@@ -5594,12 +5993,24 @@ namespace ace
 		/**
 			@brief	コンストラクタ
 		*/
-		Layer3D();
+		Layer3D(RenderSettings settings = RenderSettings());
 
 		/**
 			@brief	デストラクタ
 		*/
 		virtual ~Layer3D();
+
+		/**
+			@brief	描画設定を取得する。
+			@return	描画設定
+		*/
+		RenderSettings GetRenderSettings() const;
+
+		/**
+			@brief	描画設定を設定する。
+			@param	settings	描画設定
+		*/
+		void SetRenderSettings(RenderSettings settings);
 
 		/**
 			@brief	このレイヤーに指定した3Dオブジェクトを追加する。
@@ -5612,6 +6023,19 @@ namespace ace
 			@param	object	削除される3Dオブジェクト
 		*/
 		void RemoveObject(const ObjectPtr& object);
+
+		/**
+			@brief	空方向の環境光の色を設定する。
+			@param	color	色
+		*/
+		void SetSkyAmbientColor(Color color);
+
+		/**
+		@brief	地面方向の環境光の色を設定する。
+		@param	color	色
+		*/
+		void SetGroundAmbientColor(Color color);
+
 	};
 }
 
@@ -5634,12 +6058,13 @@ namespace ace
 	public:
 		typedef std::shared_ptr<Layer> LayerPtr;
 		typedef std::shared_ptr<SceneComponent> ComponentPtr;
+		typedef std::shared_ptr<Scene> Ptr;
 
 	private:
 		std::shared_ptr<CoreScene> m_coreScene;
 		std::list<LayerPtr> m_layersToDraw;
 		std::list<LayerPtr> m_layersToUpdate;
-		std::map<astring, ComponentPtr> m_components;
+		std::map<astring, SceneComponent::Ptr> m_components;
 
 		void Draw();
 
@@ -5667,22 +6092,34 @@ namespace ace
 		virtual ~Scene();
 
 		/**
+			@brief	描画先のフォーマットがHDRか取得する。
+			@return	HDRか?
+		*/
+		bool GetHDRMode() const;
+
+		/**
+			@brief	描画先のフォーマットをHDRにするか設定する。
+			@param	value	HDRか?
+		*/
+		void SetHDRMode(bool value);
+
+		/**
 			@brief	指定したレイヤーをこのインスタンスに追加する。
 			@param	layer	追加するレイヤー
 		*/
-		void AddLayer(const LayerPtr& layer);
+		void AddLayer(const Layer::Ptr& layer);
 		/**
 			@brief	指定したレイヤーをこのインスタンスから削除する。
 			@param	layer	削除するレイヤー
 		*/
-		void RemoveLayer(const LayerPtr& layer);
+		void RemoveLayer(const Layer::Ptr& layer);
 
 		/**
 			@brief	指定したコンポーネントをこのインスタンスに追加する。
 			@param	component	追加するコンポーネント
 			@param	key			コンポーネントに関連付けるキー
 		*/
-		void AddComponent(const ComponentPtr& component, astring key);
+		void AddComponent(const SceneComponent::Ptr& component, astring key);
 		/**
 			@brief	キーの示すコンポーネントをこのインスタンスから取得する。
 			@param	key		取得するコンポーネントを示すキー
@@ -5695,7 +6132,7 @@ namespace ace
 		void RemoveComponent(astring key);
 
 		/**
-			@brief	シーンの最終的な描画内容を表示する三角形を追加する。
+			@brief	シーンの最終的な描画内容を表示する三角形を追加する。(非推奨)
 			@param	pos1	座標1
 			@param	uv1		UV1
 			@param	col1	色1
@@ -5750,7 +6187,7 @@ namespace ace {
 		/**
 		@brief	描画に使用するデバイス
 		*/
-		eGraphicsType	GraphicsType = eGraphicsType::GRAPHICS_TYPE_DX11;
+		GraphicsDeviceType	GraphicsDevice = GraphicsDeviceType::Default;
 
 		/**
 		@brief	マルチスレッドモードを使用するか?
@@ -5857,6 +6294,16 @@ namespace ace {
 		*/
 		static void SetTargetFPS(int32_t fps);
 
+		/**
+			@brief	ウインドウを閉じる。
+		*/
+		static void Close();
+
+		/**
+		@brief	Windowsの場合、ウインドウのハンドルを取得する。
+		@return	ウインドウハンドル
+		*/
+		static void* GetWindowHandle();
 
 		/**
 		@brief キーボードクラスを取得する。
