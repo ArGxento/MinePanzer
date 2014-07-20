@@ -16,16 +16,18 @@
 // * DLLÇ™Ç»Ç©Ç¡ÇΩèÍçáÇ…ä¥ímÇ≈Ç´Ç»Ç¢ÇÃÇÕåµÇµÇ¢
 using namespace ace;
 
+template<typename T> using sp = std::shared_ptr<T>;
+
 static const int fieldWidth = 20;
 static const int fieldHeight = 20;
 static const int mineNum = 40;
 
 namespace ImgManager {
-	void setTexture2D(std::shared_ptr<Texture2D>& tex, char const* file) {
+	void setTexture2D(sp<Texture2D>& tex, char const* file) {
 		tex = Engine::GetGraphics()->CreateTexture2D(ToAString(file).c_str());
 	}
-	std::shared_ptr<Texture2D> closedCell, minedCell, obstacleCell, player, digTarget;
-	std::array<std::shared_ptr<Texture2D>, 9> freeCells;
+	sp<Texture2D> closedCell, minedCell, obstacleCell, player, digTarget;
+	std::array<sp<Texture2D>, 9> freeCells;
 	void init() {
 		setTexture2D(closedCell, "img/closedCell.png");
 		setTexture2D(minedCell, "img/minedCell.png");
@@ -155,13 +157,13 @@ public:
 
 class Field {
 
-	using CellArray = std::array<std::array<std::shared_ptr<Cell>, fieldWidth>, fieldHeight>;
+	using CellArray = std::array<std::array<sp<Cell>, fieldWidth>, fieldHeight>;
 	CellArray cellArray;
-	std::shared_ptr<Layer2D> parentLayer;
+	sp<Layer2D> parentLayer;
 
 public:
 
-	Field(std::shared_ptr<Layer2D> parent) : parentLayer(parent){
+	Field(sp<Layer2D> parent) : parentLayer(parent){
 		
 
 		for(int iy = 0; iy < fieldHeight; iy++) for(int ix = 0; ix < fieldWidth; ix++) {
@@ -181,11 +183,11 @@ public:
 			if(layMine(distX(eng), distY(eng))) { i++; }
 		}
 		
-		openCell(3, 3, true);
+		// openCell(3, 3, true);
 
 	}
 
-	std::shared_ptr<Cell> getCell(int const x, int const y) const { return cellArray.at(y).at(x); }
+	sp<Cell> getCell(int const x, int const y) const { return cellArray.at(y).at(x); }
 	/// lay a mine
 	/// @return true iff succeeded to mine.
 	bool layMine(int const x, int const y) {
@@ -253,7 +255,8 @@ class EngineProvider {
 public:
 	EngineProvider() {
 		auto opt = ace::EngineOption();
-		opt.GraphicsType = ace::eGraphicsType::GRAPHICS_TYPE_GL;
+		// opt.GraphicsType = ace::eGraphicsType::GRAPHICS_TYPE_GL;
+		opt.GraphicsDevice = ace::GraphicsDeviceType::DirectX11;
 		opt.IsFullScreen = false;
 		opt.IsMultithreadingMode = true;
 		// * initÇÃï∂éöóÒÇ…const char*Ç∆astringÇ™Ç†Ç¡ÇΩï˚Ç™Ç¢Ç¢
@@ -268,72 +271,143 @@ public:
 };
 
 class Player: public TextureObject2D {
-	void OnStart() override {
+private:
+	Keyboard *input;
+	float prevExpectedDirection = 0.0f, expectedDirection = 0.0f;
+	bool isRotating = false;
+	double angle = 0.0;
+	float speed = 0.0f;
+protected:
+	void move() {
+		speed = 1.0f;
+		prevExpectedDirection = expectedDirection;
+		if(!((int)input->GetKeyState(Keys::Left) & 1)) {
+			if(!((int)input->GetKeyState(Keys::Up) & 1)) {
+				expectedDirection = 5.0f;
+			} else if(!((int)input->GetKeyState(Keys::Down) & 1)) {
+				expectedDirection = 3.0f;
+			} else {
+				expectedDirection = 4.0f;
+			}
+
+		} else if(!((int)input->GetKeyState(Keys::Right) & 1)) {
+			if(!((int)input->GetKeyState(Keys::Up) & 1)) {
+				expectedDirection = 7.0f;
+			} else if(!((int)input->GetKeyState(Keys::Down) & 1)) {
+				expectedDirection = 1.0f;
+			} else {
+				expectedDirection = 0.0f;
+			}
+
+		} else {
+			if(!((int)input->GetKeyState(Keys::Up) & 1)) {
+				expectedDirection = 6.0f;
+			} else if(!((int)input->GetKeyState(Keys::Down) & 1)) {
+				expectedDirection = 2.0f;
+			} else {
+				speed = 0.0f;
+			}
+		}
+
+		if(prevExpectedDirection != expectedDirection) {isRotating = true;}
+
+		const double expectedAngle = expectedDirection * 45.0;
+		if(isRotating && abs(expectedAngle - angle) > 4.0f) {
+			if(sin(((expectedAngle - angle) * 2.0 * PI) / 360.0) > 0) {
+				angle += 4.0;
+			} else {
+				angle -= 4.0;
+			}
+		} else {
+			angle = expectedAngle;
+			isRotating = false;
+		}
+		SetAngle((float)angle);
+		const auto pos = GetPosition();
+		SetPosition(Vector2DF((float)(pos.X + cos(angle * 2.0 * PI / 360.0) * speed), (float)(pos.Y + sin(angle * 2.0 * PI / 360.0) * speed)));
+	}
+public:
+	virtual void OnStart() override {
+		input = Engine::GetKeyboard();
 		SetTexture(ImgManager::player);
-		SetScale(Vector2DF(0.25f, 0.25f));
-		SetCenterPosition(Vector2DF(64.0f, 64.0f));
+		SetCenterPosition(Vector2DF(256.0f, 256.0f));
 		SetPosition(Vector2DF(0.0f, 0.0f));
+	}
+	
+	virtual void OnUpdate() override{
+		SetScale(Vector2DF(1.0f, 1.0f));
+		move();
+		SetScale(Vector2DF(0.25f, 0.25f));
+
 	}
 };
 
-class GameManager {
-protected:
-	std::shared_ptr<Scene> game = std::shared_ptr<Scene>(new Scene()), title = std::shared_ptr<Scene>(new Scene());
-	std::shared_ptr<Layer2D> fieldLayer = std::shared_ptr<Layer2D>(new Layer2D()), objectLayer = std::shared_ptr<Layer2D>(new Layer2D()), effectLayer = std::shared_ptr<Layer2D>(new Layer2D());
-	std::shared_ptr<CameraObject2D> cameraf = std::shared_ptr<CameraObject2D>(new CameraObject2D()), camerao = std::shared_ptr<CameraObject2D>(new CameraObject2D());;
-	std::shared_ptr<Field> field;
-	std::shared_ptr<Player> player = std::shared_ptr<Player>(new Player());
-	Keyboard* input;
+
+class GameScene: public Scene {
+	sp<Layer2D> fieldLayer = sp<Layer2D>(new Layer2D()), objectLayer = sp<Layer2D>(new Layer2D()), effectLayer = sp<Layer2D>(new Layer2D());
+	sp<CameraObject2D> cameraf = sp<CameraObject2D>(new CameraObject2D()), camerao = sp<CameraObject2D>(new CameraObject2D());;
+	sp<Field> field;
+	sp<Player> player = sp<Player>(new Player());
+	Keyboard *input;
 
 public:
-	void OnStart() {
+	GameScene(): Scene() {
 		ImgManager::init();
 		input = Engine::GetKeyboard();
-		game->AddLayer(fieldLayer);
-		game->AddLayer(objectLayer);
-		game->AddLayer(effectLayer);
+		AddLayer(fieldLayer);
+		AddLayer(objectLayer);
+		AddLayer(effectLayer);
 		fieldLayer->SetDrawingPriority(0);
 		objectLayer->SetDrawingPriority(1);
 		effectLayer->SetDrawingPriority(2);
+		
+		auto lightBloom = std::make_shared<PostEffectLightBloom>();
+		lightBloom->SetThreshold(0.5f);
+		lightBloom->SetIntensity(16.0f);
+		lightBloom->SetPower(0.7f);
+		fieldLayer->AddPostEffect(lightBloom);
+		objectLayer->AddPostEffect(lightBloom);
+		effectLayer->AddPostEffect(lightBloom);
 		cameraf->SetSrc(RectI(0, 0, 800, 600));
+
 		cameraf->SetDst(RectI(0, 0, 800, 600));
 		camerao->SetSrc(RectI(0, 0, 800, 600));
 		camerao->SetDst(RectI(0, 0, 800, 600));
-		
+
 		objectLayer->AddObject(camerao);
 		fieldLayer->AddObject(cameraf);
 		field = std::make_shared<Field>(fieldLayer);
-		
+
 		objectLayer->AddObject(player);
-		
-		Engine::ChangeScene(game);
+
 	}
 
-	void OnUpdate() {
+	void OnUpdating() override {
 		for(int iy = 0; iy < fieldHeight; iy++) for(int ix = 0; ix < fieldWidth; ix++) {
 			auto& e = field->getCell(ix, iy);
 			if(e->isToOpenByFriend) { e->isToOpenByFriend = false; field->openCell(ix, iy, true); }
 			if(e->isToOpenByEnemy) { e->isToOpenByEnemy = false; field->openCell(ix, iy, false); }
-			
+
 		}
 		auto pPos = player->GetPosition();
-		player->SetPosition(Vector2DF(pPos.X + 1, pPos.Y + 1));
-		cameraf->SetSrc(RectI(pPos.X, pPos.Y, 800, 600));
-		camerao->SetSrc(RectI(pPos.X, pPos.Y, 800, 600));
-		
+
+		cameraf->SetSrc(RectI((int)(pPos.X + 0.5f) - 400, (int)(pPos.Y + 0.5f) - 300, 800, 600));
+		camerao->SetSrc(RectI((int)(pPos.X + 0.5f) - 400, (int)(pPos.Y + 0.5f) - 300, 800, 600));
+
 
 	}
-	virtual ~GameManager() {}
+
+
 };
+
 
 int main() {
 	EngineProvider engineProvider;
-	GameManager gameManager;
-	gameManager.OnStart();
+	sp<Scene> gameScene = sp<Scene>(new GameScene());
+	Engine::ChangeScene(gameScene);
 	while(Engine::DoEvents()) {
-		std::cout << Engine::GetCurrentFPS() << std::endl;
+		//std::cout << Engine::GetCurrentFPS() << "\n";
 		Engine::Update();
-		gameManager.OnUpdate();
 	}
 
 }

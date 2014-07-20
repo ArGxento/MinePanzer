@@ -2383,6 +2383,7 @@ namespace ace {
 	class CoreDirectionalLightObject3D;
 
 	class CorePostEffect;
+	class CoreTransition;
 
 	//----------------------------------------------------------------------------------
 	//
@@ -3643,7 +3644,7 @@ namespace ace
 		@param	writingDirection	描画方向
 		@return	文字の描画領域
 		*/
-		virtual Vector2DI CalcTextureSize(achar* text, WritingDirection writingDirection) = 0;
+		virtual Vector2DI CalcTextureSize(const achar* text, WritingDirection writingDirection) = 0;
 	};
 }
 
@@ -3701,6 +3702,7 @@ namespace ace
 		virtual void SetAlphaBlendMode(AlphaBlend alphaBlend) = 0;
 	};
 }
+
 
 
 
@@ -4308,12 +4310,22 @@ namespace ace {
 		virtual void EndDrawing() = 0;
 
 		/**
-			@brief	現在のシーンを描画します。
+			@brief	シーンをウインドウに描画する。
+		*/
+		virtual void DrawSceneToWindow(CoreScene* scene) = 0;
+
+		/**
+			@brief	画面遷移しつつシーンをウインドウに描画する。
+		*/
+		virtual void DrawSceneToWindowWithTransition(CoreScene* nextScene, CoreScene* previousScene, CoreTransition* transition) = 0;
+
+		/**
+			@brief	現在のコアの内部情報を描画する。
 		*/
 		virtual void Draw() = 0;
 
 		/**
-			@brief	描画対象となるシーンを変更します。
+			@brief	現在のシーンを変更します。
 		*/
 		virtual void ChangeScene(CoreScene* scene) = 0;
 
@@ -4588,6 +4600,80 @@ namespace ace
 		virtual void OnDraw(std::shared_ptr<RenderTexture2D> dst, std::shared_ptr<RenderTexture2D> src) override;
 	};
 
+}
+
+
+namespace ace
+{
+	/**
+		@brief	画面遷移時の効果を適用するクラス
+	*/
+	class Transition
+	{
+		friend class Engine;
+
+	private:
+		std::shared_ptr<CoreTransition> coreTransition;
+
+		std::shared_ptr<CoreTransition> GetCoreTransition() { return coreTransition; }
+
+	public:
+		Transition();
+		virtual ~Transition();
+
+		/**
+		@brief	オーバーライドして、このオブジェクトの更新処理を記述できる。
+		*/
+		virtual void OnUpdate();
+
+		/**
+		@brief	実際にシーンを次のシーンに切り替える。
+		*/
+		void ChangeScene();
+
+		/**
+		@brief	画面遷移処理を終了する。
+		*/
+		void Finish();
+
+		/**
+		@brief	次の画面を3角形に貼り付けて描画する。
+		@param	pos1	座標1
+		@param	uv1		UV1
+		@param	uv1		頂点カラー1
+		@param	pos2	座標2
+		@param	uv2		UV2
+		@param	uv2		頂点カラー2
+		@param	pos3	座標3
+		@param	uv3		UV3
+		@param	uv3		頂点カラー3
+		@note
+		ChangeSceneを実行するまでは無効である。
+		*/
+		virtual void DrawNextScene(
+			Vector2DF pos1, Vector2DF uv1, Color col1,
+			Vector2DF pos2, Vector2DF uv2, Color col2,
+			Vector2DF pos3, Vector2DF uv3, Color col3);
+
+		/**
+		@brief	前の画面を3角形に貼り付けて描画する。
+		@param	pos1	座標1
+		@param	uv1		UV1
+		@param	uv1		頂点カラー1
+		@param	pos2	座標2
+		@param	uv2		UV2
+		@param	uv2		頂点カラー2
+		@param	pos3	座標3
+		@param	uv3		UV3
+		@param	uv3		頂点カラー3
+		@note
+		ChangeSceneを実行すると前のシーンの描画は停止する。
+		*/
+		void DrawPreviousScene(
+			Vector2DF pos1, Vector2DF uv1, Color col1,
+			Vector2DF pos2, Vector2DF uv2, Color col2,
+			Vector2DF pos3, Vector2DF uv3, Color col3);
+	};
 }
 
 
@@ -4942,11 +5028,26 @@ namespace ace
 
 		/**
 		@brief	追加のテクスチャを描画する。
+		@param	upperLeftPos	テクスチャの左上の描画位置
+		@param	upperRightPos	テクスチャの右上の描画位置
+		@param	lowerRightPos	テクスチャの右下の描画位置
+		@param	lowerLeftPos	テクスチャの左下の描画位置
+		@param	upperLeftCol	テクスチャの左上の頂点色
+		@param	upperRightCol	テクスチャの右上の頂点色
+		@param	lowerRightCol	テクスチャの右下の頂点色
+		@param	lowerLeftCol	テクスチャの左下の頂点色
+		@param	upperLeftUV		テクスチャの左上のUV値
+		@param	upperRightUV	テクスチャの右上のUV値
+		@param	lowerRightUV	テクスチャの右下のUV値
+		@param	lowerLeftUV		テクスチャの左下のUV値
+		@param	texture			描画するテクスチャ
+		@param	alphaBlend		アルファブレンドの種類
+		@param	priority		描画の優先順位(大きいほど前面に描画される)
 		*/
-		void DrawSpriteAdditionally(Vector2DF pos1, Vector2DF pos2, Vector2DF pos3, Vector2DF pos4,
-			Color col1, Color col2, Color col3, Color col4,
-			Vector2DF uv1, Vector2DF uv2, Vector2DF uv3, Vector2DF uv4,
-			Texture2D* texture, AlphaBlend alphaBlend, int32_t priority);
+		void DrawSpriteAdditionally(Vector2DF upperLeftPos, Vector2DF upperRightPos, Vector2DF lowerRightPos, Vector2DF lowerLeftPos,
+			Color upperLeftCol, Color upperRightCol, Color lowerRightCol, Color lowerLeftCol,
+			Vector2DF upperLeftUV, Vector2DF upperRightUV, Vector2DF lowerRightUV, Vector2DF lowerLeftUV,
+			std::shared_ptr<Texture2D> texture, AlphaBlend alphaBlend, int32_t priority);
 
 	public:
 		/**
@@ -5520,12 +5621,27 @@ namespace ace
 		void RemoveComponent(astring key);
 
 		/**
-		@brief	追加のテクスチャを描画する。
+			@brief	追加のテクスチャを描画する。
+			@param	upperLeftPos	テクスチャの左上の描画位置
+			@param	upperRightPos	テクスチャの右上の描画位置
+			@param	lowerRightPos	テクスチャの右下の描画位置
+			@param	lowerLeftPos	テクスチャの左下の描画位置
+			@param	upperLeftCol	テクスチャの左上の頂点色
+			@param	upperRightCol	テクスチャの右上の頂点色
+			@param	lowerRightCol	テクスチャの右下の頂点色
+			@param	lowerLeftCol	テクスチャの左下の頂点色
+			@param	upperLeftUV		テクスチャの左上のUV値
+			@param	upperRightUV	テクスチャの右上のUV値
+			@param	lowerRightUV	テクスチャの右下のUV値
+			@param	lowerLeftUV		テクスチャの左下のUV値
+			@param	texture			描画するテクスチャ
+			@param	alphaBlend		アルファブレンドの種類
+			@param	priority		描画の優先順位(大きいほど前面に描画される)
 		*/
-		void DrawSpriteAdditionally(Vector2DF pos1, Vector2DF pos2, Vector2DF pos3, Vector2DF pos4,
-			Color col1, Color col2, Color col3, Color col4,
-			Vector2DF uv1, Vector2DF uv2, Vector2DF uv3, Vector2DF uv4,
-			Texture2D* texture, AlphaBlend alphaBlend, int32_t priority);
+		void DrawSpriteAdditionally(Vector2DF upperLeftPos, Vector2DF upperRightPos, Vector2DF lowerRightPos, Vector2DF lowerLeftPos,
+			Color upperLeftCol, Color upperRightCol, Color lowerRightCol, Color lowerLeftCol,
+			Vector2DF upperLeftUV, Vector2DF upperRightUV, Vector2DF lowerRightUV, Vector2DF lowerLeftUV,
+			std::shared_ptr<Texture2D>  texture, AlphaBlend alphaBlend, int32_t priority);
 	};
 }
 
@@ -6218,6 +6334,9 @@ namespace ace {
 
 		static std::shared_ptr<Scene>	m_currentScene;
 		static std::shared_ptr<Scene>	m_nextScene;
+		static std::shared_ptr<Scene>	m_previousScene;
+
+		static std::shared_ptr<Transition>	transition;
 
 	private:
 		static bool HasDLL(const char* path);
@@ -6267,8 +6386,16 @@ namespace ace {
 
 		/**
 			@brief	描画する対象となるシーンを変更する。
+			@param	scene	次のシーン
 		*/
 		static void ChangeScene(std::shared_ptr<Scene>& scene);
+
+		/**
+		@brief	描画する対象となるシーンを画面遷移効果ありで変更する。
+		@param	scene	次のシーン
+		@param	transition	画面遷移効果
+		*/
+		static void ChangeSceneWithTransition(std::shared_ptr<Scene>& scene, std::shared_ptr<Transition>& transition);
 
 		/**
 		@brief	スクリーンショットをpngとして保存する。
